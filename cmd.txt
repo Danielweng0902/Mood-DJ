@@ -1,0 +1,8 @@
+cd /Users/Pig0902/Documents/VScode/MoodDJ
+python server/server.py
+
+cd /Users/Pig0902/Documents/VScode/MoodDJ
+python client/player.py
+
+cd /Users/Pig0902/Documents/VScode/MoodDJ
+python client/gui_tkinter.py
