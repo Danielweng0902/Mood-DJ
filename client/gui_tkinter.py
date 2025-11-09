@@ -8,34 +8,46 @@ MoodDJ Pro - Tkinter GUI Client
 - 即時顯示伺服器回應（情緒分析結果與歌曲名稱）
 - 可與 player.py 同時運作（UDP 播放音樂）
 """
+import os, sys
+# ✅ 讓 Python 找到上層的 utils 模組
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utils.encryptor import encrypt_message, decrypt_message
 import socket
 import threading
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
 
+# ------------------------------------------------------------
+# Server 設定
+# ------------------------------------------------------------
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 5678
 BUFFER_SIZE = 1024
 
 
-# ------------------------------
+# ------------------------------------------------------------
 # 傳送 prompt 到伺服器的函式
-# ------------------------------
+# ------------------------------------------------------------
 def send_prompt_to_server(prompt: str) -> str:
-    """建立 TCP 連線 → 傳送 /prompt 指令 → 接收伺服器回覆"""
+    """建立 TCP 連線 → 傳送 /prompt 指令（加密）→ 接收伺服器回覆（解密）"""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((SERVER_IP, SERVER_PORT))
-            sock.sendall(f"/prompt {prompt}".encode())
-            response = sock.recv(BUFFER_SIZE).decode(errors="replace")
-            return response.strip()
+            # 傳送加密指令
+            encrypted_data = encrypt_message(f"/prompt {prompt}")
+            sock.sendall(encrypted_data)
+            # 接收加密回覆並解密
+            response = sock.recv(BUFFER_SIZE)
+            decrypted_response = decrypt_message(response)
+            return decrypted_response.strip()
     except Exception as e:
         return f"[Error] {e}"
 
 
-# ------------------------------
+# ------------------------------------------------------------
 # GUI 控制邏輯
-# ------------------------------
+# ------------------------------------------------------------
 class MoodDJ_GUI:
     def __init__(self, root):
         self.root = root
@@ -68,7 +80,9 @@ class MoodDJ_GUI:
         # 底部提示
         tk.Label(root, text="Note: Open player.py to hear music! 🎵", fg="gray").pack(side=tk.BOTTOM, pady=5)
 
-    # 傳送並更新 UI
+    # --------------------------------------------------------
+    # 傳送按鈕行為
+    # --------------------------------------------------------
     def send_prompt(self):
         user_input = self.prompt_entry.get().strip()
         if not user_input:
@@ -79,7 +93,7 @@ class MoodDJ_GUI:
         self.send_button.config(state=tk.DISABLED)
         self.prompt_entry.delete(0, tk.END)
 
-        # 使用 thread 避免 UI 卡住
+        # 使用 Thread 避免 UI 卡住
         threading.Thread(target=self._send_thread, args=(user_input,), daemon=True).start()
 
     def _send_thread(self, text):
@@ -95,9 +109,9 @@ class MoodDJ_GUI:
         self.response_box.configure(state=tk.DISABLED)
 
 
-# ------------------------------
+# ------------------------------------------------------------
 # 主程式入口
-# ------------------------------
+# ------------------------------------------------------------
 if __name__ == "__main__":
     root = tk.Tk()
     app = MoodDJ_GUI(root)

@@ -1,0 +1,26 @@
+# -*- coding: utf-8 -*-
+"""
+utils/encryptor.py
+-----------------------------------
+封裝訊息加密與解密功能 (AES-based Fernet)
+供 client / server 共用
+"""
+from cryptography.fernet import Fernet
+
+# 你可以固定一組 key（或動態生成後寫入檔案）
+# 產生新 key 可用：
+# >>> from cryptography.fernet import Fernet
+# >>> print(Fernet.generate_key())
+
+SECRET_KEY = b'jZoOAKeJP1FpjZP_PbQo6b7T4-mzK2qOxi6_9IjECK4='
+cipher = Fernet(SECRET_KEY)
+
+
+def encrypt_message(message: str) -> bytes:
+    """加密字串成 bytes"""
+    return cipher.encrypt(message.encode())
+
+
+def decrypt_message(encrypted_data: bytes) -> str:
+    """解密 bytes 為字串"""
+    return cipher.decrypt(encrypted_data).decode()
