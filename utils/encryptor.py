@@ -24,3 +24,27 @@ def encrypt_message(message: str) -> bytes:
 def decrypt_message(encrypted_data: bytes) -> str:
     """解密 bytes 為字串"""
     return cipher.decrypt(encrypted_data).decode()
+
+# ============================================================
+#  Large Message Split / Join Utilities
+# ============================================================
+
+def send_large(sock, data: bytes):
+    """傳送大封包：前置 10-byte 長度 header"""
+    length = len(data)
+    header = f"{length:<10}".encode()  # 固定 10 位，左對齊填空
+    sock.sendall(header + data)
+
+def recv_large(sock, buffer_size=1024):
+    """接收大封包：先讀 header，再根據長度讀完整內容"""
+    header = sock.recv(10)
+    if not header:
+        return b""
+    total_len = int(header.decode().strip())
+    data = b""
+    while len(data) < total_len:
+        chunk = sock.recv(buffer_size)
+        if not chunk:
+            break
+        data += chunk
+    return data

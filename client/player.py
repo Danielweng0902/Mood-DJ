@@ -11,6 +11,20 @@ import socket
 UDP_PORT = 5680
 BUFFER_SIZE = 1024
 
+def play_stream(sock, url):
+    print(f"[player] Starting playback for stream: {url}")
+    while True:
+        data, _ = sock.recvfrom(1024)
+        if data:
+            try:
+                import pyaudio
+                p = pyaudio.PyAudio()
+                stream = p.open(format=pyaudio.paInt16, channels=1, rate=44100, output=True)
+                stream.write(data)
+            except Exception as e:
+                print(f"[player] Error playing audio: {e}")
+                break
+
 # ------------------------------------------------------------
 # 嘗試載入 PyAudio；若失敗，自動使用 sounddevice
 # ------------------------------------------------------------
@@ -43,6 +57,7 @@ def listen_udp():
             while True:
                 data, _ = sock.recvfrom(BUFFER_SIZE)
                 if data:
+                    print(f"[player] Received {len(data)} bytes")
                     stream.write(data)
         except KeyboardInterrupt:
             print("[player] Stopped by user.")
@@ -60,6 +75,7 @@ def listen_udp():
             while True:
                 data, _ = sock.recvfrom(BUFFER_SIZE)
                 if data:
+                    print(f"[player] Received {len(data)} bytes")
                     samples = np.frombuffer(data, dtype=np.int16)
                     stream.write(samples)
         except KeyboardInterrupt:

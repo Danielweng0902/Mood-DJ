@@ -12,7 +12,7 @@ import os, sys
 # ✅ 讓 Python 找到上層的 utils 模組
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.encryptor import encrypt_message, decrypt_message
+from utils.encryptor import encrypt_message, decrypt_message, send_large, recv_large
 import socket
 import threading
 import tkinter as tk
@@ -30,16 +30,16 @@ BUFFER_SIZE = 1024
 # 傳送 prompt 到伺服器的函式
 # ------------------------------------------------------------
 def send_prompt_to_server(prompt: str) -> str:
-    """建立 TCP 連線 → 傳送 /prompt 指令（加密）→ 接收伺服器回覆（解密）"""
+    """建立 TCP 連線 → 傳送 /prompt 指令（加密 + 分段）→ 接收伺服器回覆（解密 + 分段）"""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((SERVER_IP, SERVER_PORT))
-            # 傳送加密指令
+            # 傳送加密封包（分段）
             encrypted_data = encrypt_message(f"/prompt {prompt}")
-            sock.sendall(encrypted_data)
-            # 接收加密回覆並解密
-            response = sock.recv(BUFFER_SIZE)
-            decrypted_response = decrypt_message(response)
+            send_large(sock, encrypted_data)
+            # 接收封包（分段）
+            response_encrypted = recv_large(sock, BUFFER_SIZE)
+            decrypted_response = decrypt_message(response_encrypted)
             return decrypted_response.strip()
     except Exception as e:
         return f"[Error] {e}"
