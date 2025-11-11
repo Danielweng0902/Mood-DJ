@@ -2,7 +2,14 @@ cd /Users/Pig0902/Documents/VScode/MoodDJ
 python server/server.py
 
 cd /Users/Pig0902/Documents/VScode/MoodDJ
-python client/player.py
+python server/peer_registry.py
 
 cd /Users/Pig0902/Documents/VScode/MoodDJ
 python client/gui_tkinter.py
+
+cd /Users/Pig0902/Documents/VScode/MoodDJ
+python client/player.py
+
+cd /Users/Pig0902/Documents/VScode/MoodDJ
+python client/peer_discovery.py
+python client/peer_streamer.py

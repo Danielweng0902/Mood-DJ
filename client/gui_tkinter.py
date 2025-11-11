@@ -17,6 +17,8 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
+import peer_discovery
+import peer_streamer
 
 # ------------------------------------------------------------
 # Server 設定
@@ -52,7 +54,7 @@ class MoodDJ_GUI:
     def __init__(self, root):
         self.root = root
         self.root.title("🎧 MoodDJ Pro - Tkinter GUI Client")
-        self.root.geometry("500x400")
+        self.root.geometry("500x460")
         self.root.resizable(False, False)
 
         # 標題
@@ -69,6 +71,18 @@ class MoodDJ_GUI:
             root, text="Send to Server", command=self.send_prompt, bg="#4CAF50", fg="white", width=20
         )
         self.send_button.pack(pady=5)
+
+        # P2P 按鈕區域
+        p2p_frame = tk.Frame(root)
+        p2p_frame.pack(pady=5)
+        self.p2p_discovery_button = tk.Button(
+            p2p_frame, text="Enable P2P Discovery", command=self.start_p2p_discovery, bg="#2196F3", fg="white", width=20
+        )
+        self.p2p_discovery_button.pack(side=tk.LEFT, padx=5)
+        self.p2p_stream_button = tk.Button(
+            p2p_frame, text="Start P2P Stream", command=self.start_p2p_stream, bg="#f44336", fg="white", width=20
+        )
+        self.p2p_stream_button.pack(side=tk.LEFT, padx=5)
 
         # 顯示狀態區域
         tk.Label(root, text="Server Response:").pack(pady=(15, 0))
@@ -97,16 +111,29 @@ class MoodDJ_GUI:
         threading.Thread(target=self._send_thread, args=(user_input,), daemon=True).start()
 
     def _send_thread(self, text):
-        self._log(f"[Client] Sending: {text}")
+        self._log_async(f"[Client] Sending: {text}")
         response = send_prompt_to_server(text)
-        self._log(response)
-        self.send_button.config(state=tk.NORMAL)
+        self._log_async(response)
+        self._log_async("[P2P] Discovery and Streaming status active.")
+        self.root.after(0, lambda: self.send_button.config(state=tk.NORMAL))
 
     def _log(self, msg):
         self.response_box.configure(state=tk.NORMAL)
         self.response_box.insert(tk.END, msg + "\n")
         self.response_box.see(tk.END)
         self.response_box.configure(state=tk.DISABLED)
+
+    def _log_async(self, msg):
+        """Schedule UI log updates from worker threads."""
+        self.root.after(0, lambda: self._log(msg))
+
+    def start_p2p_discovery(self):
+        self._log("[P2P] Starting peer discovery...")
+        threading.Thread(target=peer_discovery.main, daemon=True).start()
+
+    def start_p2p_stream(self):
+        self._log("[P2P] Starting peer streaming...")
+        threading.Thread(target=peer_streamer.main, daemon=True).start()
 
 
 # ------------------------------------------------------------
