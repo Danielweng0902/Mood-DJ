@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# 改為從 YouTube Music 搜尋曲目 (使用 yt_dlp 抓音訊串流 URL)
+# 從 YouTube Music 搜尋曲目 (使用 yt_dlp 抓音訊串流 URL)
 import yt_dlp
 
 YOUTUBE_PLAYLISTS = {
