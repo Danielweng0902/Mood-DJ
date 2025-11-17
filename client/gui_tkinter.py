@@ -20,19 +20,15 @@ from tkinter import messagebox, scrolledtext
 import peer_discovery
 import peer_streamer
 
-# ------------------------------------------------------------
 # Server 設定
-# ------------------------------------------------------------
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 5678
 BUFFER_SIZE = 1024
 
 
-# ------------------------------------------------------------
-# 傳送 prompt 到伺服器的函式
-# ------------------------------------------------------------
+# 傳送 prompt 到伺服器
 def send_prompt_to_server(prompt: str) -> str:
-    """建立 TCP 連線 → 傳送 /prompt 指令（加密 + 分段）→ 接收伺服器回覆（解密 + 分段）"""
+    # 建立 TCP 連線 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((SERVER_IP, SERVER_PORT))
@@ -47,15 +43,16 @@ def send_prompt_to_server(prompt: str) -> str:
         return f"[Error] {e}"
 
 
-# ------------------------------------------------------------
-# GUI 控制邏輯
-# ------------------------------------------------------------
+# GUI 控制
 class MoodDJ_GUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("🎧 MoodDJ Pro - Tkinter GUI Client")
-        self.root.geometry("500x460")
+        self.root.title(" MoodDJ Pro - Tkinter GUI Client")
+        self.root.geometry("640x480")
         self.root.resizable(False, False)
+        
+        # 🔥 一啟動 GUI 就自動啟動 player
+        threading.Thread(target=self.start_player_background, daemon=True).start()
 
         # 標題
         tk.Label(root, text="MoodDJ Pro", font=("Arial", 18, "bold")).pack(pady=5)
@@ -103,11 +100,11 @@ class MoodDJ_GUI:
             messagebox.showwarning("Warning", "Please enter your mood text!")
             return
 
-        # 禁用按鈕避免重複按
+        # 禁用按鈕 避免重複
         self.send_button.config(state=tk.DISABLED)
         self.prompt_entry.delete(0, tk.END)
 
-        # 使用 Thread 避免 UI 卡住
+        # 使用 Thread 
         threading.Thread(target=self._send_thread, args=(user_input,), daemon=True).start()
 
     def _send_thread(self, text):
@@ -134,12 +131,21 @@ class MoodDJ_GUI:
     def start_p2p_stream(self):
         self._log("[P2P] Starting peer streaming...")
         threading.Thread(target=peer_streamer.main, daemon=True).start()
+        
+    def start_player_background(self):
+        """自動啟動 client/player.py（保持可獨立啟動）"""
+        import subprocess, sys, os
+        try:
+            player_path = os.path.join(os.path.dirname(__file__), "player.py")
+            subprocess.Popen([sys.executable, player_path])
+            self._log_async("[player] Background player 啟動成功")
+        except Exception as e:
+            self._log_async(f"[player] 啟動失敗: {e}")
 
+# 主程式
 
-# ------------------------------------------------------------
-# 主程式入口
-# ------------------------------------------------------------
 if __name__ == "__main__":
+    
     root = tk.Tk()
     app = MoodDJ_GUI(root)
     root.mainloop()
