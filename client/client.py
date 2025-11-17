@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-client/client_secure.py
+client/client.py
 -----------------------------------
 支援 Auto-Reconnect / Encryption 的安全版 Client
 功能：
@@ -8,160 +8,178 @@ client/client_secure.py
 - TCP 加密傳輸
 - 接收加密回覆並解密顯示
 """
-import os, sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # 加入專案根目錄
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server"))  # 加入 server/
+from __future__ import annotations
+
+import os
 import socket
-import time
+import sys
 import threading
-from utils.encryptor import encrypt_message, decrypt_message
-from player import play_stream
+import time
+from dataclasses import dataclass
+from typing import Optional
 
-SERVER_IP = "127.0.0.1"
-SERVER_PORT = 5678
-BUFFER_SIZE = 4096
-UDP_START_PORT = 5680
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server"))
 
-def find_available_udp_port(start_port):
-    port = start_port
-    while True:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as test_sock:
-            try:
-                test_sock.bind(('', port))
-                return port
-            except OSError:
-                port += 1
+from utils.encryptor import SecureChannel
 
-def heartbeat_thread():
-    while True:
+
+@dataclass(frozen=True)
+class ClientConfig:
+    server_ip: str = "127.0.0.1"
+    server_port: int = 5678
+    heartbeat_port: int = 5690
+    buffer_size: int = 4096
+    poll_interval: float = 0.05
+    heartbeat_interval: float = 5.0
+
+
+class MoodDJClient:
+    """Command-line TCP client with automatic reconnect + heartbeat."""
+
+    def __init__(self, config: Optional[ClientConfig] = None) -> None:
+        self.config = config or ClientConfig()
+        self._control_sock: Optional[socket.socket] = None
+        self._channel: Optional[SecureChannel] = None
+        self._running = True
+
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
+    def run(self) -> None:
+        threading.Thread(target=self._heartbeat_loop, daemon=True).start()
+        self._connect_control()
+
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as hb:
-                hb.connect((SERVER_IP, 5690))
-                hb.settimeout(10)
-                print("[Heartbeat] ✅ Connected to server.")
-                while True:
-                    try:
+            while True:
+                try:
+                    cmd = input("> ").strip()
+                except EOFError:
+                    break
+
+                if not cmd:
+                    continue
+                if not cmd.startswith("/text "):
+                    print("Usage: /text <your mood>")
+                    continue
+
+                prompt = cmd.replace("/text ", "", 1)
+                self._handle_prompt(prompt)
+        except KeyboardInterrupt:
+            print("\n[client] Exiting.")
+        finally:
+            self._running = False
+            self._close_control()
+
+    # ------------------------------------------------------------------
+    # Networking helpers
+    # ------------------------------------------------------------------
+    def _connect_control(self) -> None:
+        while True:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((self.config.server_ip, self.config.server_port))
+                sock.setblocking(False)
+                self._control_sock = sock
+                self._channel = SecureChannel(sock, buffer_size=self.config.buffer_size)
+                print("[client] ✅ Connected to server.")
+                return
+            except Exception as exc:
+                print(f"[client] ⚠️ Connect failed ({exc}), retrying in 3s...")
+                time.sleep(3)
+
+    def _reconnect(self) -> None:
+        self._close_control()
+        self._connect_control()
+
+    def _close_control(self) -> None:
+        if self._control_sock:
+            try:
+                self._control_sock.close()
+            except OSError:
+                pass
+        self._control_sock = None
+        self._channel = None
+
+    def _ensure_channel(self) -> SecureChannel:
+        if not self._channel:
+            raise ConnectionError("Client is not connected to the server")
+        return self._channel
+
+    # ------------------------------------------------------------------
+    # Command handlers
+    # ------------------------------------------------------------------
+    def _handle_prompt(self, prompt: str) -> None:
+        while True:
+            try:
+                channel = self._ensure_channel()
+                self._send_text(channel, f"/prompt {prompt}")
+                ack = self._wait_for_message(channel)
+                if ack:
+                    print(ack)
+                response = self._wait_for_message(channel)
+                if response:
+                    print(response)
+                    self._maybe_hint_player(response)
+                return
+            except (ConnectionResetError, ConnectionError, BrokenPipeError, OSError) as exc:
+                print(f"[client] ⚠️ Connection lost during request ({exc}), reconnecting...")
+                self._reconnect()
+            except Exception as exc:
+                print(f"[client] Unexpected error: {exc}")
+                time.sleep(self.config.poll_interval)
+
+    def _send_text(self, channel: SecureChannel, message: str) -> None:
+        while True:
+            try:
+                channel.send_text(message)
+                return
+            except BlockingIOError:
+                time.sleep(self.config.poll_interval)
+
+    def _wait_for_message(self, channel: SecureChannel) -> str:
+        while True:
+            try:
+                message = channel.recv_text()
+            except BlockingIOError:
+                time.sleep(self.config.poll_interval)
+                continue
+
+            if message is None:
+                raise ConnectionResetError("Server closed the connection")
+            return message
+
+    def _maybe_hint_player(self, response: str) -> None:
+        if "http" in response or "udp://" in response:
+            print("[client] 💡 Run client/player.py to start listening to the UDP stream.")
+
+    # ------------------------------------------------------------------
+    # Heartbeat
+    # ------------------------------------------------------------------
+    def _heartbeat_loop(self) -> None:
+        while self._running:
+            try:
+                with socket.create_connection(
+                    (self.config.server_ip, self.config.heartbeat_port), timeout=10
+                ) as hb:
+                    hb.settimeout(10)
+                    print("[heartbeat] ✅ Connected to server.")
+                    while self._running:
                         hb.sendall(b"ping")
                         resp = hb.recv(32)
                         if not resp:
                             raise ConnectionResetError("Empty response, server closed connection")
-                        print(f"[Heartbeat] {resp.decode().strip()}")
-                        time.sleep(5)
-                    except (socket.timeout, ConnectionResetError, BrokenPipeError) as e_inner:
-                        print(f"[Heartbeat] ⚠️ Lost heartbeat: {e_inner}")
-                        break
-        except Exception as e:
-            print(f"[Heartbeat] Retrying in 3s... ({e})")
-            time.sleep(3)
-            
-
-def connect_to_server():
-    """自動重連機制"""
-    while True:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((SERVER_IP, SERVER_PORT))
-            sock.setblocking(False)
-            print("[client] ✅ Connected to server.")
-            return sock
-        except Exception as e:
-            print(f"[client] ⚠️ Connect failed ({e}), retrying in 3s...")
-            time.sleep(3)
+                        print(f"[heartbeat] {resp.decode().strip()}")
+                        time.sleep(self.config.heartbeat_interval)
+            except Exception as exc:
+                if not self._running:
+                    break
+                print(f"[heartbeat] Retrying in 3s... ({exc})")
+                time.sleep(3)
 
 
-def main():
-    udp_port = find_available_udp_port(UDP_START_PORT)
-    print(f"[client] Using UDP port {udp_port} (to avoid conflict with server)")
-
-    heartbeat = threading.Thread(target=heartbeat_thread, daemon=True)
-    heartbeat.start()
-
-    sock = connect_to_server()
-
-    # Setup UDP socket listener before sending commands
-    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        udp_sock.bind(('', udp_port))
-        print(f"[client] UDP listener started on port {udp_port}")
-    except Exception as e:
-        print(f"[client] Error binding UDP socket on port {udp_port}: {e}")
-        udp_sock.close()
-        return
-
-    while True:
-        try:
-            cmd = input("> ")
-            if not cmd:
-                break
-
-            if cmd.startswith("/text "):
-                msg = cmd.replace("/text ", "")
-
-                # Tell server which UDP port client listens on
-                try:
-                    setudp_msg = encrypt_message(f"/setudp {udp_port}")
-                    sock.sendall(setudp_msg)
-                except Exception as e:
-                    print(f"[client] Error sending /setudp command: {e}")
-
-                encrypted = encrypt_message(f"/prompt {msg}")
-                sock.sendall(encrypted)
-
-                # Receive response and decrypt
-                try:
-                    data = sock.recv(BUFFER_SIZE)
-                    if not data:
-                        print("[client] No data received from server.")
-                        continue
-                    try:
-                        response = decrypt_message(data)
-                    except Exception as e_dec:
-                        print(f"[client] Decryption failed: {e_dec}")
-                        continue
-                    print(response)
-
-                    # If response includes stream URL, start UDP listener thread for playback
-                    if "http" in response or "udp://" in response:
-                        # Extract URL (simple heuristic)
-                        url_start = response.find("http")
-                        if url_start == -1:
-                            url_start = response.find("udp://")
-                        if url_start != -1:
-                            url = response[url_start:].split()[0]
-                            print(f"[client] Starting audio stream playback from URL: {url}")
-                            # Start streamer playback thread
-                            threading.Thread(target=streamer.play_stream, args=(udp_sock, url), daemon=True).start()
-                except BlockingIOError:
-                    # No data available yet
-                    pass
-                except Exception as e_recv:
-                    print(f"[client] Error receiving or processing server response: {e_recv}")
-
-            else:
-                print("Usage: /text <your mood>")
-            time.sleep(0.05)
-        except (ConnectionResetError, BrokenPipeError, OSError) as e:
-            print(f"[client] ⚠️ Connection lost, auto reconnecting... Detail: {e}")
-            try:
-                sock.close()
-            except Exception as e_close:
-                print(f"[client] Error closing socket: {e_close}")
-            sock = connect_to_server()
-        except KeyboardInterrupt:
-            print("\n[client] Exiting.")
-            break
-        except Exception as e:
-            print(f"[client] Unexpected error: {e}")
-            time.sleep(0.05)
-
-    try:
-        sock.close()
-    except Exception as e:
-        print(f"[client] Error closing socket on exit: {e}")
-    try:
-        udp_sock.close()
-    except Exception as e:
-        print(f"[client] Error closing UDP socket on exit: {e}")
+def main() -> None:
+    MoodDJClient().run()
 
 
 if __name__ == "__main__":

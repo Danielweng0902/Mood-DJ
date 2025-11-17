@@ -16,7 +16,7 @@ from utils.encryptor import encrypt_message, decrypt_message, send_large, recv_l
 import socket
 import threading
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext, ttk
 import peer_discovery
 import peer_streamer
 
@@ -24,6 +24,8 @@ import peer_streamer
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 5678
 BUFFER_SIZE = 1024
+BUTTON_MIN_WIDTH = 140
+BUTTON_STYLE = "Mood.TButton"
 
 
 # 傳送 prompt 到伺服器
@@ -47,49 +49,84 @@ def send_prompt_to_server(prompt: str) -> str:
 class MoodDJ_GUI:
     def __init__(self, root):
         self.root = root
-        self.root.title(" MoodDJ Pro - Tkinter GUI Client")
-        self.root.geometry("640x480")
-        self.root.resizable(False, False)
+        self.root.title("MoodDJ Pro - Tkinter GUI Client")
+        self.root.geometry("720x520")
+        self.root.minsize(620, 420)
+        self.root.configure(padx=18, pady=18)
+        self.root.columnconfigure(0, weight=1)
+        for row in range(5):
+            self.root.rowconfigure(row, weight=1 if row == 3 else 0)
+
+        style = ttk.Style()
+        style.configure(BUTTON_STYLE, padding=(10, 8), font=("Arial", 11))
+        normal_fg = style.lookup("TButton", "foreground", default="#111111")
+        style.map(BUTTON_STYLE, foreground=[("disabled", normal_fg), ("!disabled", normal_fg)])
         
         # 🔥 一啟動 GUI 就自動啟動 player
         threading.Thread(target=self.start_player_background, daemon=True).start()
 
         # 標題
-        tk.Label(root, text="MoodDJ Pro", font=("Arial", 18, "bold")).pack(pady=5)
-        tk.Label(root, text="Enter your mood and let the DJ pick a song 🎶").pack()
+        header = ttk.Frame(root)
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text="MoodDJ Pro", font=("Arial", 18, "bold")).grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(header, text="Enter your mood and let the DJ pick a song 🎶").grid(
+            row=1, column=0, sticky="w", pady=(2, 0)
+        )
 
         # 輸入框
-        self.prompt_entry = tk.Entry(root, width=50, font=("Arial", 12))
-        self.prompt_entry.pack(pady=10)
+        input_frame = ttk.LabelFrame(root, text="Mood Prompt")
+        input_frame.grid(row=1, column=0, sticky="ew", pady=(15, 10))
+        input_frame.columnconfigure(0, weight=1)
+        self.prompt_entry = ttk.Entry(input_frame, font=("Arial", 12))
+        self.prompt_entry.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         self.prompt_entry.bind("<Return>", lambda event: self.send_prompt())
+        self.prompt_entry.focus_set()
 
-        # 送出按鈕
-        self.send_button = tk.Button(
-            root, text="Send to Server", command=self.send_prompt, bg="#4CAF50", fg="white", width=20
-        )
-        self.send_button.pack(pady=5)
+        # 控制按鈕
+        button_frame = ttk.Frame(root)
+        button_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        for col in range(3):
+            button_frame.columnconfigure(col, weight=1, uniform="btn", minsize=BUTTON_MIN_WIDTH)
 
-        # P2P 按鈕區域
-        p2p_frame = tk.Frame(root)
-        p2p_frame.pack(pady=5)
-        self.p2p_discovery_button = tk.Button(
-            p2p_frame, text="Enable P2P Discovery", command=self.start_p2p_discovery, bg="#2196F3", fg="white", width=20
+        self.send_button = ttk.Button(
+            button_frame, text="Send to Server", command=self.send_prompt, style=BUTTON_STYLE
         )
-        self.p2p_discovery_button.pack(side=tk.LEFT, padx=5)
-        self.p2p_stream_button = tk.Button(
-            p2p_frame, text="Start P2P Stream", command=self.start_p2p_stream, bg="#f44336", fg="white", width=20
+        self.send_button.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+
+        self.p2p_discovery_button = ttk.Button(
+            button_frame, text="Enable P2P Discovery", command=self.start_p2p_discovery, style=BUTTON_STYLE
         )
-        self.p2p_stream_button.pack(side=tk.LEFT, padx=5)
+        self.p2p_discovery_button.grid(row=0, column=1, sticky="nsew", padx=4)
+
+        self.p2p_stream_button = ttk.Button(
+            button_frame, text="Start P2P Stream", command=self.start_p2p_stream, style=BUTTON_STYLE
+        )
+        self.p2p_stream_button.grid(row=0, column=2, sticky="nsew", padx=(8, 0))
 
         # 顯示狀態區域
-        tk.Label(root, text="Server Response:").pack(pady=(15, 0))
-        self.response_box = scrolledtext.ScrolledText(root, width=60, height=10, font=("Consolas", 10))
-        self.response_box.pack(pady=5)
+        response_frame = ttk.LabelFrame(root, text="Server Response")
+        response_frame.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
+        response_frame.columnconfigure(0, weight=1)
+        response_frame.rowconfigure(0, weight=1)
+        self.response_box = scrolledtext.ScrolledText(
+            response_frame,
+            width=60,
+            height=12,
+            font=("Consolas", 10),
+            wrap=tk.WORD,
+        )
+        self.response_box.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.response_box.insert(tk.END, "Waiting for command...\n")
         self.response_box.configure(state=tk.DISABLED)
 
         # 底部提示
-        tk.Label(root, text="Note: Open player.py to hear music! 🎵", fg="gray").pack(side=tk.BOTTOM, pady=5)
+        footer = ttk.Label(
+            root, text="Note: Open player.py to hear music! 🎵", foreground="gray"
+        )
+        footer.grid(row=4, column=0, sticky="ew", pady=(10, 0))
 
     # --------------------------------------------------------
     # 傳送按鈕行為
